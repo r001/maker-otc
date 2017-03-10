@@ -651,4 +651,67 @@ contract SimpleMarket is EventfulMarket {
         );
         success = true;
     }
+    
+    uint MARKING_GAS_LIMIT = 100000;//FIXME: set reasonable gas price
+    uint GAS_OF_MATCHING = 100000; //FIXME: set reasonable gas price
+    mapping ( address => uint) gas_storage;
+    struct MarkedOffer {
+        uint     first_id;
+        uint     last id;
+        uint     next_queue_id;
+        uint     next_unfinished_queue;
+        bool     isFinished;
+        uint     buy_how_much_matched;
+        uint     sell_how_much_matched;
+        uint     buy_how_much_marked;
+        uint     sell_how_much_marked;
+    }
+
+    mapping (uint => MarkedOffer) public queue;
+    
+
+    function doMarking( uint bid_id) 
+    returns (bool had_enough_gas) {
+        uint gas_forecast;
+        ask_id = highest_offer_id[offers[bid_id].buy_how_much][offers[bid_id].sell_how_much];
+        while (msg.gas > MARKING_GAS_LIMIT 
+               && queue[bid_id].buy_how_much_marked < offers[bid_id].buy_how_much 
+               && ask_id > 0
+               && safeMul( offers[ask_id].buy_how_much , offers[bid_id].buy_how_much ) 
+                    <= safeMul( offers[bid_id].sell_how_much , offers[ask_id].sell_how_much )){
+            if ( offers[ask_id].sell_how_much 
+                < safeSub( offers[bid_id].buy_how_much , queue[bid_id].buy_how_much_marked ) ) {
+                //ask offers less than bidder wants to buy
+                
+                gas_forecast += GAS_OF_MATCHING;
+                if ( gas_forecast > msg.gas - MARKING_GAS_LIMIT ) {
+                    //gas of matching fits to current block
+
+                    if ( gas_storage[offers[bid_id].owner] >= GAS_OF_MATCHING ) {
+                        //gas storage has enough gas to match one offer
+
+                        gas_storage[offers[bid_id].owner] -= GAS_OF_MATCHING;
+                    }else{
+                        //gas storage has not enough gas to match one offer
+
+                        break;
+                    }
+                }
+                offers[ask_id].isActive = false;
+                queue[bid_id].buy_how_much_marked += offers[ask_id].sell_how_much;
+                queue[bid_id].sell_how_much_marked += offers[ask_id].buy_how_much; 
+                 
+            }else{
+                //ask offers more than bid can buy
+                
+                //FIXME: line below at wrong place
+                spend = safeMul( offers[bid_id].buy_how_much, offers[ask_id].buy_how_much ) 
+                / offers[ask_id].sell_how_much;  
+                 
+            }
+                        
+            ask_id = lower_offer_id[ask_id]; 
+        }
+    }
+
 }
