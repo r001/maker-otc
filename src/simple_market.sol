@@ -44,6 +44,46 @@ contract EventfulMarket {
 
 contract SimpleMarket is EventfulMarket {
     bool locked;
+    address contractOwner;
+    bool closed;
+    uint cancel_mingas=10000;
+
+
+    function SimpleMarket(){
+        contractOwner = msg.sender;
+    }
+
+    function destructContract() returns (bool){
+        assert(contractOwner == msg.sender);
+        assert(offer_count == 0);
+        selfdestruct(contractOwner);
+    }
+
+    function setCancelMingas(uint mingas) returns (bool){
+        assert(contractOwner == msg.sender);
+        cancel_mingas=mingas;
+        return true;
+    }
+
+    function cancelAllOffers() returns (bool) {
+        assert(closed);
+        assert(contractOwner == msg.sender);
+        for(uint id = first_offer_id; id != 0; id = next_offer_id[id]){
+            cancel(id);
+            if( msg.gas < cancel_mingas ) { return false; }
+        }
+        return true;
+    }
+
+    function isClosed() constant returns (bool) {
+        return (closed);
+    }
+    
+    function setClosed(bool closeMarket) returns (bool) {
+        assert(contractOwner == msg.sender);
+        closed = closeMarket;
+        return true;
+    }
 
     modifier synchronized {
         assert(!locked);
@@ -67,22 +107,39 @@ contract SimpleMarket is EventfulMarket {
 
     mapping (uint => OfferInfo) public offers;
 
+    mapping( uint => uint ) public prev_offer_id;
+    
+    mapping( uint => uint ) public next_offer_id;
+
+    uint public first_offer_id;
+
     uint public last_offer_id;
 
+    uint offer_count;
+
+    mapping( address => uint) public min_sell_amount;
+
     function next_id() internal returns (uint) {
-        last_offer_id++; return last_offer_id;
+        offer_count++;
+        last_offer_id++; 
+        return last_offer_id;
     }
 
+    // after market lifetime has elapsed, no new offers are allowed
     modifier can_offer {
+        assert(!isClosed());
         _;
     }
+    // after close, no new buys are allowed
     modifier can_buy(uint id) {
         assert(isActive(id));
+        assert(!isClosed());
         _;
     }
+    // after close, anyone can cancel an offer
     modifier can_cancel(uint id) {
         assert(isActive(id));
-        assert(getOwner(id) == msg.sender);
+        assert(isClosed() || (msg.sender == getOwner(id)));
         _;
     }
     function isActive(uint id) constant returns (bool active) {
@@ -95,6 +152,46 @@ contract SimpleMarket is EventfulMarket {
       var offer = offers[id];
       return (offer.sell_how_much, offer.sell_which_token,
               offer.buy_how_much, offer.buy_which_token);
+    }
+
+    function getLastOffer() constant returns(uint) {
+        return last_offer_id;
+    }
+
+    function getFirstOffer() constant returns(uint) {
+        return first_offer_id;
+    }
+
+    function getPrevOfferId(uint id) constant returns(uint) {
+        return prev_offer_id[id];
+    }
+
+    function getNextOfferId(uint id) constant returns(uint) {
+        return next_offer_id[id];
+    }
+
+    function getOfferCount() constant returns(uint) {
+        return offer_count;
+    }
+
+    function setMinSellAmount(ERC20 sell_which_token, uint min_amount) 
+    returns (bool success) {
+        assert(contractOwner == msg.sender);
+        min_sell_amount[sell_which_token] = min_amount;
+        success = true;
+    }
+    
+    function getMinSellAmount(ERC20 sell_which_token) 
+    constant
+    returns (uint) {
+        return min_sell_amount[sell_which_token];
+    }
+
+    function deleteMinSellAmount(ERC20 sell_which_token) 
+    returns (bool success) {
+        assert(contractOwner == msg.sender);
+        delete min_sell_amount[sell_which_token];
+        success = true;
     }
 
     // non underflowing subtraction
@@ -145,6 +242,7 @@ contract SimpleMarket is EventfulMarket {
         synchronized
         returns (uint id)
     {
+        assert(min_sell_amount[sell_which_token] <= sell_how_much);
         assert(uint128(sell_how_much) == sell_how_much);
         assert(uint128(buy_how_much) == buy_how_much);
         assert(sell_how_much > 0);
@@ -162,6 +260,18 @@ contract SimpleMarket is EventfulMarket {
         info.active = true;
         id = next_id();
         offers[id] = info;
+
+        if ( offer_count >= 2 ) {
+            //offers[id] is at least the second offer that was stored
+
+            prev_offer_id[id] = last_offer_id;
+            next_offer_id[last_offer_id] = id;
+        } else {
+            //offers[id] is the first offer that is stored
+
+            first_offer_id = id;
+        }
+        last_offer_id = id;
 
         var seller_paid = sell_which_token.transferFrom( msg.sender, this, sell_how_much );
         assert(seller_paid);
@@ -255,6 +365,34 @@ contract SimpleMarket is EventfulMarket {
     {
         // read-only offer. Modify an offer by directly accessing offers[id]
         OfferInfo memory offer = offers[id];
+
+        if(last_offer_id == id){
+            //offers[id] is the last offer in the sorted list
+        
+            last_offer_id = prev_offer_id[id]; 
+            delete next_offer_id[prev_offer_id[id]];
+            delete prev_offer_id[id];
+            if ( offer_count == 1 ) {
+                //offer was the last offer 
+        
+                first_offer_id = 0;
+            }
+        } else if( first_offer_id == id ) {
+            //offers[id] is the first offer
+        
+            first_offer_id = next_offer_id[id]; 
+            delete prev_offer_id[ next_offer_id[id] ];
+            delete next_offer_id[id];
+        } else {
+            //offers[id] is between the last and the first offer
+
+            prev_offer_id[next_offer_id[id]] = prev_offer_id[id];
+            next_offer_id[prev_offer_id[id]] = next_offer_id[id];
+            delete prev_offer_id[id];
+            delete next_offer_id[id];
+        }
+
+        offer_count--;
         delete offers[id];
 
         var seller_refunded = offer.sell_which_token.transfer( offer.owner , offer.sell_how_much );
