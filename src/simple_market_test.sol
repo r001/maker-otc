@@ -33,6 +33,23 @@ contract SimpleMarketTest is DSTest, EventfulMarket {
         dai = new DSTokenBase(10 ** 9);
         mkr = new DSTokenBase(10 ** 6);
     }
+    function testLinkedListOneOffer() {
+        mkr.approve(otc, 1);
+        otc.offer( 1, mkr, 1, dai);
+        assertEq(otc.getFirstOffer(), 1);
+        assertEq(otc.getLastOffer(), 1);
+        assertEq(otc.getNextOfferId(1), 0);
+        assertEq(otc.getPrevOfferId(1), 0);
+    }
+    function testLinkedListTwoOffers() {
+        mkr.approve(otc, 2);
+        var id1 = otc.offer( 1, mkr, 1, dai);
+        var id2 = otc.offer( 1, mkr, 2, dai);
+        assertEq(otc.getFirstOffer(), id1);
+        assertEq(otc.getLastOffer(), id2);
+        assertEq(otc.getNextOfferId(id1), id2);
+        assertEq(otc.getPrevOfferId(id2), id1);
+    }
     function testBasicTrade() {
         dai.transfer(user1, 100);
         user1.doApprove(otc, 100, dai);
