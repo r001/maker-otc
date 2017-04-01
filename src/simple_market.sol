@@ -18,17 +18,6 @@ contract EventfulMarket {
         uint64            timestamp
     );
 
-    event LogBump(
-        bytes32  indexed  id,
-        bytes32  indexed  pair,
-        address  indexed  maker,
-        ERC20             haveToken,
-        ERC20             wantToken,
-        uint128           haveAmount,
-        uint128           wantAmount,
-        uint64            timestamp
-    );
-
     event LogTake(
         bytes32           id,
         bytes32  indexed  pair,
@@ -79,6 +68,18 @@ contract SimpleMarket is EventfulMarket {
 
     mapping (uint => OfferInfo) public offers;
 
+    mapping( uint => uint ) public prev_active_id;
+    
+    mapping( uint => uint ) public next_active_id;
+
+    uint public first_active_id;
+
+    uint public last_active_id;
+
+    uint public active_count;
+
+    mapping( address => uint) public min_sell_amount;
+
     uint public last_offer_id;
 
     function next_id() internal returns (uint) {
@@ -107,6 +108,18 @@ contract SimpleMarket is EventfulMarket {
       var offer = offers[id];
       return (offer.sell_how_much, offer.sell_which_token,
               offer.buy_how_much, offer.buy_which_token);
+    }
+    function getLastOffer() constant returns(uint) {
+        return last_active_id;
+    }
+    function getFirstOffer() constant returns(uint) {
+        return first_active_id;
+    }
+    function getPrevOfferId(uint id) constant returns(uint) {
+        return prev_active_id[id];
+    }
+    function getNextOfferId(uint id) constant returns(uint) {
+        return next_active_id[id];
     }
 
     // non underflowing subtraction
@@ -175,6 +188,14 @@ contract SimpleMarket is EventfulMarket {
         info.timestamp = uint64(now);
         id = next_id();
         offers[id] = info;
+        active_count++;
+        if ( active_count > 1 ) {
+            prev_active_id[id] = last_active_id;
+            next_active_id[last_active_id] = id;
+        } else {
+            first_active_id = id;
+        }
+        last_active_id = id;
 
         var seller_paid = sell_which_token.transferFrom( msg.sender, this, sell_how_much );
         assert(seller_paid);
@@ -189,22 +210,6 @@ contract SimpleMarket is EventfulMarket {
             uint128(sell_how_much),
             uint128(buy_how_much),
             uint64(now)
-        );
-    }
-
-    function bump(bytes32 id_)
-        can_buy(uint256(id_))
-    {
-        var id = uint256(id_);
-        LogBump(
-            id_,
-            sha3(offers[id].sell_which_token, offers[id].buy_which_token),
-            offers[id].owner,
-            offers[id].sell_which_token,
-            offers[id].buy_which_token,
-            uint128(offers[id].sell_how_much),
-            uint128(offers[id].buy_how_much),
-            offers[id].timestamp
         );
     }
 
@@ -284,6 +289,24 @@ contract SimpleMarket is EventfulMarket {
     {
         // read-only offer. Modify an offer by directly accessing offers[id]
         OfferInfo memory offer = offers[id];
+        if(last_active_id == id){
+            last_active_id = prev_active_id[id]; 
+            delete next_active_id[prev_active_id[id]];
+            delete prev_active_id[id];
+            if ( active_count == 1 ) {
+                first_active_id = 0;
+            }
+        } else if( first_active_id == id ) {
+            first_active_id = next_active_id[id]; 
+            delete prev_active_id[ next_active_id[id] ];
+            delete next_active_id[id];
+        } else {
+            prev_active_id[next_active_id[id]] = prev_active_id[id];
+            next_active_id[prev_active_id[id]] = next_active_id[id];
+            delete prev_active_id[id];
+            delete next_active_id[id];
+        }
+        active_count--;
         delete offers[id];
 
         var seller_refunded = offer.sell_which_token.transfer( offer.owner , offer.sell_how_much );
