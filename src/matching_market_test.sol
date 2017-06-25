@@ -1051,9 +1051,9 @@ contract OrderMatchingTest is DSTest, EventfulMarket, MatchingEvents {
         assertEq( otc.getOfferCount( dai, mkr ), 0);
         assertEq( otc.getOfferCount( mkr, dai ), 1);
         assert( !otc.isActive(offer_id[1]) );
-        //assert érice of offer_id[2] should be the same as before matching
-        assertEq( sell_val , 9);
-        assertEq( buy_val  , 9);
+        //assert price of offer_id[2] should be the same as before matching
+        assertEq( sell_val , 5);
+        assertEq( buy_val  , 5);
     } 
     function testOfferMatchingPartialSellTwoOffers(){
         mkr.transfer(user1, 10 );
@@ -1091,8 +1091,8 @@ contract OrderMatchingTest is DSTest, EventfulMarket, MatchingEvents {
         assertEq( otc.getOfferCount( mkr, dai ), 1);
         assert( !otc.isActive(offer_id[1]) );
         //assert érice of offer_id[2] should be the same as before matching
-        assertEq( sell_val , 8);
-        assertEq( buy_val  , 8);
+        assertEq( sell_val , 1);
+        assertEq( buy_val  , 1);
     } 
     function testOfferMatchingPartialBuyTwoOffers(){
         mkr.transfer(user1, 5 );

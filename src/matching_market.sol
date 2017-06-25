@@ -241,7 +241,7 @@ contract MatchingMarket is MatchingEvents, ExpiringMarket, DSNote {
         toc = false;        //taker offer should be created
         bool yet = true;    //matching not done yet
         uint mes;           //highest maker (ask) id
-        uint tas;           //taker (bid) sell how much saved    
+        uint tab;           //taker (bid) buy how much saved    
         
         //offers[pos] should buy the same token as taker 
         assert( pos == 0 
@@ -273,16 +273,15 @@ contract MatchingMarket is MatchingEvents, ExpiringMarket, DSNote {
                         //maker (ask) wants to sell more than 
                         //taker(bid) wants to buy
                         
-                        buy( mes, tbh );
                         toc = true;
                         yet = false;
+                        buy( mes, tbh );
                     } else {
                         //maker(ask) wants to sell less than 
                         //taker(bid) wants to buy
-
-                        tas = tsh; 
-                        tsh = safeSub( tsh, mbh );
-                        tbh = safeMul( tsh, tbh ) / tas;
+                        tab = tbh;
+                        tbh = safeSub( tbh, msh );
+                        tsh = safeMul( tbh, tsh ) / tab;
                         buy( mes, msh );
                     }
                 } else {
